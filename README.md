@@ -1,6 +1,9 @@
 ﻿# Auto_re_img
 🖼️ Auto Crop, Resize & Compress Web App
-This Streamlit app automatically detects a subject (like a person), crops tightly around them, resizes the image to a desired resolution without padding, and compresses it under a specified file size limit.
+This Streamlit app automatically detects a subject (like a person),
+crops tightly around them,
+resizes the image to a desired resolution without padding, 
+and compresses it under a specified file size limit.
 
 It uses:
 
