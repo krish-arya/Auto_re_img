@@ -1,22 +1,33 @@
 ﻿# Auto_re_img
 🖼️ Auto Crop, Resize & Compress Web App
+
 This Streamlit app automatically detects a subject (like a person),
+
 crops tightly around them,
+
 resizes the image to a desired resolution without padding, 
+
 and compresses it under a specified file size limit.
 
 It uses:
 
 🔍 rembg for background removal & subject detection
+
 📐 Smart cropping & resizing logic
+
 📦 Compression to fit under your desired size (in KB)
 
 🚀 Features
 🧠 Automatic Subject Detection using rembg
+
 ✂️ Tight Cropping around the subject with optional margin
+
 📏 Resize Without Padding to fit target dimensions
+
 🗜️ JPEG Compression to meet file size requirements
+
 📥 Upload History with clear option
+
 💾 Download Button to save the final image
 
 

@@ -1,7 +1,8 @@
 import streamlit as st
-from PIL import Image, ImageOps
+from PIL import Image
 from rembg import remove
 import io
+import zipfile
 
 # Function to detect and crop around the model using background removal
 def crop_around_subject(img: Image.Image, margin: int = 20):
@@ -21,7 +22,7 @@ def crop_around_subject(img: Image.Image, margin: int = 20):
     lower = min(bbox[3] + margin, img.height)
     return img.crop((left, upper, right, lower))
 
-# ✅ Function to resize by smart cropping (no padding, no background)
+# Function to resize by smart cropping (no padding, no background)
 def resize_with_crop(img: Image.Image, target_size: tuple):
     target_ratio = target_size[0] / target_size[1]
     img_ratio = img.width / img.height
@@ -39,7 +40,7 @@ def resize_with_crop(img: Image.Image, target_size: tuple):
 
 # Function to compress image under max_kb
 def compress_image(img: Image.Image, max_kb: int):
-    rgb_img = img.convert('RGB')  # Always flatten to RGB
+    rgb_img = img.convert('RGB')
     buffer = io.BytesIO()
     quality = 95
     while quality >= 20:
@@ -56,8 +57,8 @@ def compress_image(img: Image.Image, max_kb: int):
 
 # Streamlit UI
 def main():
-    st.set_page_config(page_title="Image Cropper & Resizer", layout="wide")
-    st.title("Auto Crop, Resize & Compress Around Model (No Padding)")
+    st.set_page_config(page_title="Batch Image Cropper & Resizer", layout="wide")
+    st.title("Automated Resizer & Compress Around Model")
 
     st.sidebar.header("Settings")
     width = st.sidebar.number_input("Output Width (px)", min_value=100, max_value=5000, value=1200)
@@ -68,10 +69,12 @@ def main():
 
     if "history" not in st.session_state:
         st.session_state.history = []
-    if "uploaded_bytes" not in st.session_state:
-        st.session_state.uploaded_bytes = None
-    if "final_bytes" not in st.session_state:
-        st.session_state.final_bytes = None
+    if "uploaded_files" not in st.session_state:
+        st.session_state.uploaded_files = []
+    if "processed_data" not in st.session_state:
+        st.session_state.processed_data = []
+    if "zip_bytes" not in st.session_state:
+        st.session_state.zip_bytes = None
 
     if history_clear:
         st.session_state.history.clear()
@@ -80,40 +83,51 @@ def main():
     for i, name in enumerate(reversed(st.session_state.history), 1):
         st.sidebar.text(f"{i}. {name}")
 
-    uploaded = st.file_uploader("Choose an image (PNG/JPEG)...", type=["png", "jpg", "jpeg"])
+    uploaded = st.file_uploader("Choose images (PNG/JPEG)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
     if uploaded:
-        data = uploaded.read()
-        st.session_state.uploaded_bytes = data
-        if uploaded.name not in st.session_state.history:
-            st.session_state.history.append(uploaded.name)
+        st.session_state.uploaded_files = uploaded
+        for file in uploaded:
+            if file.name not in st.session_state.history:
+                st.session_state.history.append(file.name)
 
-    if st.session_state.uploaded_bytes:
-        img = Image.open(io.BytesIO(st.session_state.uploaded_bytes)).convert("RGB")
-        orig_kb = len(st.session_state.uploaded_bytes) / 1024
-        st.subheader("Original Image")
-        st.image(img, use_column_width=True)
-        st.write(f"Original Dimensions: {img.width}×{img.height} px")
-        st.write(f"Original File Size: {orig_kb:.1f} KB")
-        st.write(f"Target Dimensions: {width}×{height} px, Max Size: {max_kb} KB")
+    if st.session_state.uploaded_files:
+        st.subheader("Uploaded Images Preview")
+        for file in st.session_state.uploaded_files:
+            img = Image.open(file).convert("RGB")
+            st.image(img, caption=file.name, use_column_width=True)
 
-        if st.button("🛠 Process Image"):
-            processed = crop_around_subject(img, margin=margin) if (img.width > width or img.height > height) else img
-            resized = resize_with_crop(processed, (width, height))  # ✅ Updated here
-            compressed_bytes, final_kb, used_quality = compress_image(resized, max_kb)
-            st.session_state.final_bytes = compressed_bytes
-            st.session_state.final_info = (resized.width, resized.height, final_kb, used_quality)
+        if st.button("🛠️ Process All Images"):
+            # Clear previous processed data
+            st.session_state.processed_data = []
+            for file in st.session_state.uploaded_files:
+                img = Image.open(file).convert("RGB")
+                processed = crop_around_subject(img, margin=margin) if (img.width > width or img.height > height) else img
+                resized = resize_with_crop(processed, (width, height))
+                out_bytes, out_kb, out_q = compress_image(resized, max_kb)
+                # Store for preview and zipping
+                st.session_state.processed_data.append((file.name, resized, out_bytes))
 
-    if st.session_state.final_bytes:
-        w, h, size_kb, quality = st.session_state.final_info
-        st.subheader("Final Image")
-        st.image(st.session_state.final_bytes, use_column_width=True)
-        st.write(f"Final Dimensions: {w}×{h} px")
-        st.write(f"Final File Size: {size_kb:.1f} KB (Quality: {quality})")
+    # Preview processed images
+    if st.session_state.processed_data:
+        st.subheader("Processed Images Preview")
+        for name, pil_img, _ in st.session_state.processed_data:
+            st.image(pil_img, caption=f"{name} (processed)", use_column_width=True)
+
+        # Create ZIP after preview
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, _, out_bytes in st.session_state.processed_data:
+                zf.writestr(f"processed_{name.split('.')[0]}.jpg", out_bytes)
+        zip_buffer.seek(0)
+        st.session_state.zip_bytes = zip_buffer.getvalue()
+
+    if st.session_state.zip_bytes:
+        st.subheader("Download Processed Images")
         st.download_button(
-            "Download Final Image",
-            data=st.session_state.final_bytes,
-            file_name="final_image.jpg",
-            mime="image/jpeg"
+            "Download ZIP",
+            data=st.session_state.zip_bytes,
+            file_name="processed_images.zip",
+            mime="application/zip"
         )
 
 if __name__ == "__main__":
