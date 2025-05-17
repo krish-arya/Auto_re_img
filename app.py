@@ -160,11 +160,15 @@ def main():
 
     if st.session_state.processed_data:
         st.subheader("Processed Images Preview")
-        for name, pil_img, _, orig_dims, orig_kb, proc_dims, proc_kb, quality in st.session_state.processed_data:
-            st.image(pil_img, caption=(
-                f"{name} | {orig_dims[0]}x{orig_dims[1]} → {proc_dims[0]}x{proc_dims[1]} px | "
-                f"{orig_kb:.1f} KB → {proc_kb:.1f} KB | Q={quality}"
-            ), use_container_width=True)
+        cols = st.columns(3)
+        for idx, (name, img, _, original_dims, original_kb, resized_dims, out_kb, out_q) in enumerate(st.session_state.processed_data):
+            with cols[idx % 3]:
+                st.image(
+                    img,
+                    caption=f"{name}\n{img.width}x{img.height}px | {out_kb:.1f}KB",
+                    use_container_width=True
+            )
+
 
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
