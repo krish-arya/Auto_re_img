@@ -57,8 +57,50 @@ def compress_image(img: Image.Image, max_kb: int):
 
 # Streamlit UI
 def main():
-    st.set_page_config(page_title="Batch Image Cropper & Resizer", layout="wide")
+    # Collapse sidebar by default and set page config
+    st.set_page_config(
+        page_title="Batch Image Cropper & Resizer",
+        layout="wide",
+        initial_sidebar_state="collapsed"
+    )
+    
+    st.markdown(
+    """
+    <style>
+    /* Dark background for main and sidebar */
+    .reportview-container, .main, .css-1lcbmhc {
+        background-color: #121212 !important;
+        color: #ECECEC !important;
+    }
+    .sidebar .sidebar-content {
+        background-color: #1e1e1e !important;
+    }
+    /* Accent color for headings and buttons */
+    h1, .st-bx {
+        color: #00BFFF !important;
+        font-family: 'Courier New', Courier, monospace;
+    }
+    .stButton>button {
+        background-color: #00BFFF !important;
+        color: #121212 !important;
+        border-radius: 8px;
+    }
+    /* Style inputs and sliders */
+    .stNumberInput > div > div > input {
+        background-color: #252525 !important;
+        color: #ECECEC !important;
+        border: 1px solid #00BFFF;
+        border-radius: 4px;
+    }
+    </style>
+    """, unsafe_allow_html=True
+    )
+
+    
     st.title("Automated Resizer & Compress Around Model")
+    # Prompt user to open the sidebar
+    st.info("💡 Click the sidebar toggle (▸) to open settings and adjust dimensions, margin, or file size.")
+    st.subheader("Start by uploading images to process.")
 
     st.sidebar.header("Settings")
     width = st.sidebar.number_input("Output Width (px)", min_value=100, max_value=5000, value=1200)
@@ -79,56 +121,62 @@ def main():
     if history_clear:
         st.session_state.history.clear()
 
-    st.sidebar.subheader("Upload History")
-    for i, name in enumerate(reversed(st.session_state.history), 1):
-        st.sidebar.text(f"{i}. {name}")
-
     uploaded = st.file_uploader("Choose images (PNG/JPEG)...", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
     if uploaded:
         st.session_state.uploaded_files = uploaded
         for file in uploaded:
             if file.name not in st.session_state.history:
                 st.session_state.history.append(file.name)
+                
+    st.sidebar.subheader("Upload History")
+    for i, name in enumerate(reversed(st.session_state.history), 1):
+        st.sidebar.text(f"{i}. {name}")
 
     if st.session_state.uploaded_files:
         st.subheader("Uploaded Images Preview")
-        for file in st.session_state.uploaded_files:
-            img = Image.open(file).convert("RGB")
-            st.image(img, caption=file.name, use_column_width=True)
+        cols = st.columns(3)
+        for idx, file in enumerate(st.session_state.uploaded_files):
+            file_bytes = file.read()
+            img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+            size_kb = len(file_bytes) / 1024
+            with cols[idx % 3]:
+                st.image(img, caption=f"{file.name}\n{img.width}x{img.height}px | {size_kb:.1f}KB", use_container_width=True)
+            file.seek(0)
 
         if st.button("🛠️ Process All Images"):
-            # Clear previous processed data
             st.session_state.processed_data = []
             for file in st.session_state.uploaded_files:
-                img = Image.open(file).convert("RGB")
+                file_bytes = file.read()
+                img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+                original_dims = (img.width, img.height)
+                original_kb = len(file_bytes) / 1024
                 processed = crop_around_subject(img, margin=margin) if (img.width > width or img.height > height) else img
                 resized = resize_with_crop(processed, (width, height))
                 out_bytes, out_kb, out_q = compress_image(resized, max_kb)
-                # Store for preview and zipping
-                st.session_state.processed_data.append((file.name, resized, out_bytes))
+                st.session_state.processed_data.append(
+                    (file.name, resized, out_bytes, original_dims, original_kb, resized.size, out_kb, out_q)
+                )
+                file.seek(0)
 
-    # Preview processed images
     if st.session_state.processed_data:
         st.subheader("Processed Images Preview")
-        for name, pil_img, _ in st.session_state.processed_data:
-            st.image(pil_img, caption=f"{name} (processed)", use_column_width=True)
+        for name, pil_img, _, orig_dims, orig_kb, proc_dims, proc_kb, quality in st.session_state.processed_data:
+            st.image(pil_img, caption=(
+                f"{name} | {orig_dims[0]}x{orig_dims[1]} → {proc_dims[0]}x{proc_dims[1]} px | "
+                f"{orig_kb:.1f} KB → {proc_kb:.1f} KB | Q={quality}"
+            ), use_container_width=True)
 
-        # Create ZIP after preview
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for name, _, out_bytes in st.session_state.processed_data:
+            for name, _, out_bytes, *_ in st.session_state.processed_data:
                 zf.writestr(f"processed_{name.split('.')[0]}.jpg", out_bytes)
         zip_buffer.seek(0)
         st.session_state.zip_bytes = zip_buffer.getvalue()
 
     if st.session_state.zip_bytes:
         st.subheader("Download Processed Images")
-        st.download_button(
-            "Download ZIP",
-            data=st.session_state.zip_bytes,
-            file_name="processed_images.zip",
-            mime="application/zip"
-        )
+        st.download_button("Download ZIP", data=st.session_state.zip_bytes,
+                       file_name="processed_images.zip", mime="application/zip")
 
 if __name__ == "__main__":
     main()
