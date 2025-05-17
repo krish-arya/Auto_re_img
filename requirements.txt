@@ -2,9 +2,3 @@ Pillow
 streamlit
 rembg
 onnxruntime
-ultralytics
-torch
-torchvision
-torchaudio
-supervision
-opencv-python
