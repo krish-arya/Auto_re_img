@@ -88,6 +88,38 @@ def optimize_image(img: Image.Image, max_size_kb: int) -> io.BytesIO:
 # ========== UI and App State ==========
 model = load_yolo_model()
 
+ st.markdown(
+    """
+    <style>
+    /* Dark background for main and sidebar */
+    .reportview-container, .main, .css-1lcbmhc {
+        background-color: #121212 !important;
+        color: #ECECEC !important;
+    }
+    .sidebar .sidebar-content {
+        background-color: #1e1e1e !important;
+    }
+    /* Accent color for headings and buttons */
+    h1, .st-bx {
+        color: #00BFFF !important;
+        font-family: 'Courier New', Courier, monospace;
+    }
+    .stButton>button {
+        background-color: #00BFFF !important;
+        color: #121212 !important;
+        border-radius: 8px;
+    }
+    /* Style inputs and sliders */
+    .stNumberInput > div > div > input {
+        background-color: #252525 !important;
+        color: #ECECEC !important;
+        border: 1px solid #00BFFF;
+        border-radius: 4px;
+    }
+    </style>
+    """, unsafe_allow_html=True
+    )
+
 # Track uploader widget state
 if "upload_key" not in st.session_state:
     st.session_state.upload_key = 0
