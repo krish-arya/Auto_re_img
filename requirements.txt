@@ -3,3 +3,6 @@ streamlit
 rembg
 onnxruntime
 opencv-python
+numpy
+ultralytics
+typing
