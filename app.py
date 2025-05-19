@@ -138,6 +138,8 @@ with st.sidebar:
         st.rerun()
 
 st.title("📸 AI-Powered Photo Cropper")
+st.info("💡 Toggle ▸ sidebar for settings: dimensions, margin, file size.")
+st.subheader("Start by uploading images to process.")
 
 uploaded_files = st.file_uploader(
     "Upload Images", 
