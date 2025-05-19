@@ -88,7 +88,7 @@ def optimize_image(img: Image.Image, max_size_kb: int) -> io.BytesIO:
 # ========== UI and App State ==========
 model = load_yolo_model()
 
- st.markdown(
+st.markdown(
     """
     <style>
     /* Dark background for main and sidebar */
