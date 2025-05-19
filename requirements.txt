@@ -2,3 +2,4 @@ Pillow
 streamlit
 rembg
 onnxruntime
+opencv-python
