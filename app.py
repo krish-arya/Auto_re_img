@@ -129,7 +129,7 @@ with st.sidebar:
     target_width = st.number_input("Output Width", 512, 4096, 1200)
     target_height = st.number_input("Output Height", 512, 4096, 1800)
     zoom_factor = st.slider("Zoom Level", 0.5, 3.0, 1.2, 0.1)
-    max_file_size = st.number_input("Max File Size (KB)", 50, 10240, 500)
+    max_file_size = st.number_input("Max File Size (KB)", 50, 10240, 800)
     process_all = st.checkbox("Process Multiple Files", True)
 
     if st.button("🗑️ Clear Uploaded Files"):
