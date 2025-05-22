@@ -129,6 +129,18 @@ def apply_branding(img: Image.Image, logo: Optional[Image.Image], **kwargs) -> I
 
     return composite.convert("RGB")
 
+def preprocess_uploaded_image(img: Image.Image, max_dim: int = 2048) -> Image.Image:
+    """
+    Compress or resize the uploaded image if it's too large to prevent memory issues.
+    - max_dim: Maximum allowed width or height.
+    """
+    if max(img.size) > max_dim:
+        ratio = max_dim / max(img.size)
+        new_size = (int(img.width * ratio), int(img.height * ratio))
+        img = img.resize(new_size, Image.LANCZOS)
+    return img.convert("RGB")  # Ensure compatibility & compression
+
+
 # ========== Load Models ==========
 model = load_yolo_model()
 clip_processor, clip_model = load_clip_model()
@@ -144,14 +156,15 @@ if uploaded_files:
     st.subheader("🔍 Uploaded Image Previews")
     cols = st.columns(min(4, len(uploaded_files)))
     for i, file in enumerate(uploaded_files):
-        img = Image.open(file)
+        img = preprocess_uploaded_image(Image.open(file).convert("RGB"))
         cols[i % len(cols)].image(img, use_container_width=True, caption=file.name)
+
 
 # Settings
 with st.sidebar:
     st.header("📏 Crop Settings")
-    target_width = st.number_input("Output Width", 512, 4096, 1080)
-    target_height = st.number_input("Output Height", 512, 4096, 1350)
+    target_width = st.number_input("Output Width", 512, 4096, 1200)
+    target_height = st.number_input("Output Height", 512, 4096, 1800)
     zoom_factor = st.slider("Zoom Level", 0.5, 3.0, 1.2)
     use_percent = st.checkbox("Headspace in Percent", True)
     top_space = st.number_input("Top Headspace", 0, 1000, 10)
@@ -165,27 +178,33 @@ with st.sidebar:
     add_text = st.checkbox("Add Text")
     text = st.text_input("Overlay Text", "Your Brand Message")
     font_size = st.slider("Font Size", 10, 150, 40)
-    text_color = st.color_picker("Text Color", "#FFFFFF")
+    text_color = st.color_picker("Text Color", "#000000")
     text_x = st.slider("Text X Position (%)", 0, 100, 5)
     text_y = st.slider("Text Y Position (%)", 0, 100, 5)
     add_padding = st.checkbox("Add Padding")
     padding = st.slider("Padding (px)", 0, 300, 50)
-    padding_color = st.color_picker("Padding Color", "#000000")
+    padding_color = st.color_picker("Padding Color", "#FFFFFF")
 
 # ========== Main Logic ==========
 if uploaded_files and st.button("🚀 Process Images"):
     results = []
     logo = Image.open(logo_file).convert("RGBA") if logo_file else None
+    progress_bar = st.progress(0, text="Processing images...")
 
-    for file in uploaded_files:
-        img = Image.open(file).convert("RGB")
+    for idx, file in enumerate(uploaded_files):
+        img = preprocess_uploaded_image(Image.open(file).convert("RGB"))
+        if max(img.size) > 3000:  # Define your large size threshold
+            img = img.resize((img.width // 2, img.height // 2), Image.LANCZOS)
+
         bbox = enhanced_subject_detection(model, img)
         if bbox is None or len(bbox) == 0:
             bbox = (img.width // 4, img.height // 4, 3 * img.width // 4, 3 * img.height // 4)
+
         cropped = smart_crop_with_headspace(
             img, bbox, (target_width, target_height), zoom_factor,
             top_space, bottom_space, use_percent
         )
+
         branded = apply_branding(
             cropped, logo,
             logo_scale=logo_scale, x_offset=x_offset, y_offset=y_offset,
@@ -193,8 +212,14 @@ if uploaded_files and st.button("🚀 Process Images"):
             text_color=text_color, text_x=text_x, text_y=text_y,
             add_padding=add_padding, padding=padding, padding_color=padding_color
         )
+
         buffer = optimize_image(branded, max_size_kb)
         results.append((file.name, branded, buffer))
+
+        # Update progress bar
+        progress_bar.progress((idx + 1) / len(uploaded_files), text=f"Processed {idx + 1} of {len(uploaded_files)}")
+    progress_bar.empty()  # remove progress bar after done
+
 
     # Show results in columns (preview)
     st.subheader("🎨 Branded Output Preview")
