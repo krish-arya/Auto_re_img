@@ -5,7 +5,6 @@ from rembg import remove
 from ultralytics import YOLO
 from typing import Tuple, Optional, Union
 import torch
-from transformers import CLIPProcessor, CLIPModel
 import ssl
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -22,12 +21,6 @@ st.set_page_config(
 @st.cache_resource
 def load_yolo_model():
     return YOLO('yolov8n-seg.pt')
-
-@st.cache_resource
-def load_clip_model():
-    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-    return processor, model
 
 # ========== Utility Functions ==========
 def compute_center_of_bbox(bbox: Tuple[int]) -> Tuple[int, int]:
@@ -143,7 +136,6 @@ def preprocess_uploaded_image(img: Image.Image, max_dim: int = 2048) -> Image.Im
 
 # ========== Load Models ==========
 model = load_yolo_model()
-clip_processor, clip_model = load_clip_model()
 
 # ========== UI Layout ==========
 st.title("🎯 AI-Powered Smart Cropper + Brand Generator")
