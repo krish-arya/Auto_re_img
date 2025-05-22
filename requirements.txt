@@ -6,3 +6,6 @@ opencv-python
 numpy
 ultralytics
 typing
+torch
+transformers
+ssl

@@ -1,39 +1,48 @@
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import io, zipfile, cv2, numpy as np
 from rembg import remove
 from ultralytics import YOLO
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
+import torch
+from transformers import CLIPProcessor, CLIPModel
+import ssl
 
-# ========== Configuration ==========
+ssl._create_default_https_context = ssl._create_unverified_context
+
+# ========== Page Configuration ==========
 st.set_page_config(
-    page_title="AI Photo Cropper Pro",
+    page_title="AI Cropper + Brand Generator",
     layout="wide",
     page_icon="🎯",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded"
 )
 
 # ========== Model Loading ==========
 @st.cache_resource
 def load_yolo_model():
-    try:
-        return YOLO('yolov8n-seg.pt')
-    except Exception as e:
-        st.error(f"Failed to load YOLO model: {str(e)}")
-        return None
+    return YOLO('yolov8n-seg.pt')
 
-# ========== Core Functions ==========
+@st.cache_resource
+def load_clip_model():
+    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    return processor, model
+
+# ========== Utility Functions ==========
+def compute_center_of_bbox(bbox: Tuple[int]) -> Tuple[int, int]:
+    return (bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2
+
 def enhanced_subject_detection(model, img: Image.Image) -> Optional[Tuple[int]]:
     img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    if model:
-        results = model.predict(img_cv, classes=0, verbose=False)
-        for r in results:
-            if r.masks is not None:
-                masks = r.masks.xy
-                if len(masks) > 0:
-                    largest_mask = max(masks, key=lambda m: cv2.contourArea(m))
-                    x, y, w, h = cv2.boundingRect(largest_mask.astype(np.int32))
-                    return (x, y, x + w, y + h)
+    results = model.predict(img_cv, classes=0, verbose=False)
+    for r in results:
+        if r.masks is not None:
+            masks = r.masks.xy
+            if len(masks) > 0:
+                largest_mask = max(masks, key=lambda m: cv2.contourArea(m))
+                x, y, w, h = cv2.boundingRect(largest_mask.astype(np.int32))
+                return (x, y, x + w, y + h)
     bg_removed = remove(img, post_process_mask=True)
     alpha = bg_removed.split()[-1]
     bbox = alpha.getbbox()
@@ -48,7 +57,9 @@ def enhanced_subject_detection(model, img: Image.Image) -> Optional[Tuple[int]]:
         )
     return None
 
-def smart_crop_to_target(img: Image.Image, bbox: Tuple[int], target_size: Tuple[int], zoom: float):
+def smart_crop_with_headspace(img: Image.Image, bbox: Tuple[int], target_size: Tuple[int], zoom: float,
+                               headspace_top: Union[int, float], headspace_bottom: Union[int, float],
+                               use_percent: bool = False) -> Image.Image:
     img_w, img_h = img.size
     t_width, t_height = target_size
     subject_width = bbox[2] - bbox[0]
@@ -58,12 +69,13 @@ def smart_crop_to_target(img: Image.Image, bbox: Tuple[int], target_size: Tuple[
     scale = min(t_width / zoomed_width, t_height / zoomed_height)
     crop_width = int(t_width / scale)
     crop_height = int(t_height / scale)
-    cx = (bbox[0] + bbox[2]) // 2
-    cy = (bbox[1] + bbox[3]) // 2
+    top_extra = int(headspace_top * subject_height / 100) if use_percent else int(headspace_top)
+    bottom_extra = int(headspace_bottom * subject_height / 100) if use_percent else int(headspace_bottom)
+    cx, cy = compute_center_of_bbox(bbox)
+    top = max(0, cy - crop_height // 2 - top_extra)
+    bottom = min(img_h, cy + crop_height // 2 + bottom_extra)
     left = max(0, cx - crop_width // 2)
     right = min(img_w, cx + crop_width // 2)
-    top = max(0, cy - crop_height // 2)
-    bottom = min(img_h, cy + crop_height // 2)
     if right - left < crop_width:
         if left == 0: right = min(crop_width, img_w)
         else: left = max(0, right - crop_width)
@@ -85,121 +97,118 @@ def optimize_image(img: Image.Image, max_size_kb: int) -> io.BytesIO:
     buffer.seek(0)
     return buffer
 
-# ========== UI and App State ==========
-model = load_yolo_model()
+def apply_branding(img: Image.Image, logo: Optional[Image.Image], **kwargs) -> Image.Image:
+    composite = img.convert("RGBA")
 
-st.markdown(
-    """
-    <style>
-    /* Dark background for main and sidebar */
-    .reportview-container, .main, .css-1lcbmhc {
-        background-color: #121212 !important;
-        color: #ECECEC !important;
-    }
-    .sidebar .sidebar-content {
-        background-color: #1e1e1e !important;
-    }
-    /* Accent color for headings and buttons */
-    h1, .st-bx {
-        color: #00BFFF !important;
-        font-family: 'Courier New', Courier, monospace;
-    }
-    .stButton>button {
-        background-color: #00BFFF !important;
-        color: #121212 !important;
-        border-radius: 8px;
-    }
-    /* Style inputs and sliders */
-    .stNumberInput > div > div > input {
-        background-color: #252525 !important;
-        color: #ECECEC !important;
-        border: 1px solid #00BFFF;
-        border-radius: 4px;
-    }
-    </style>
-    """, unsafe_allow_html=True
-    )
+    if logo:
+        logo = logo.convert("RGBA")
+        logo_width = int((kwargs["logo_scale"] / 100) * composite.width)
+        logo_height = int(logo_width * (logo.height / logo.width))
+        logo_resized = logo.resize((logo_width, logo_height), Image.LANCZOS)
+        x_px = int((kwargs["x_offset"] / 100) * (composite.width - logo_width))
+        y_px = int((kwargs["y_offset"] / 100) * (composite.height - logo_height))
+        if kwargs["add_padding"]:
+            new_w = composite.width + 2 * kwargs["padding"]
+            new_h = composite.height + 2 * kwargs["padding"]
+            padded = Image.new("RGBA", (new_w, new_h), kwargs["padding_color"])
+            padded.paste(composite, (kwargs["padding"], kwargs["padding"]))
+            x_px += kwargs["padding"]
+            y_px += kwargs["padding"]
+            composite = padded
+        composite.paste(logo_resized, (x_px, y_px), logo_resized)
 
-# Track uploader widget state
-if "upload_key" not in st.session_state:
-    st.session_state.upload_key = 0
-
-with st.sidebar:
-    st.header("⚙️ Settings")
-    target_width = st.number_input("Output Width", 512, 4096, 1200)
-    target_height = st.number_input("Output Height", 512, 4096, 1800)
-    zoom_factor = st.slider("Zoom Level", 0.5, 3.0, 1.2, 0.1)
-    max_file_size = st.number_input("Max File Size (KB)", 50, 10240, 800)
-    process_all = st.checkbox("Process Multiple Files", True)
-
-    if st.button("🗑️ Clear Uploaded Files"):
-        st.session_state.upload_key += 1
-        st.session_state.pop("processed_images", None)
-        st.rerun()
-
-st.title("📸 AI-Powered Photo Cropper")
-st.info("💡 Toggle ▸ sidebar for settings: dimensions, margin, file size.")
-st.subheader("Start by uploading images to process.")
-
-uploaded_files = st.file_uploader(
-    "Upload Images", 
-    type=["jpg", "jpeg", "png"], 
-    accept_multiple_files=True,
-    key=f"uploader_{st.session_state.upload_key}"
-)
-
-# ========== Preview Uploaded Files ==========
-if uploaded_files:
-    with st.expander("🔍 Preview Uploaded Images", expanded=True):
-        cols = st.columns(3)
-        for idx, file in enumerate(uploaded_files):
-            with cols[idx % 3]:
-                st.image(Image.open(file), caption=file.name, use_container_width=True)
-
-# ========== Process Images ==========
-if uploaded_files and st.button("🚀 Start Processing" if process_all else "✨ Process Image"):
-    processed = []
-    progress_bar = st.progress(0)
-    
-    for idx, file in enumerate(uploaded_files):
+    if kwargs["add_text"] and kwargs["text"]:
+        draw = ImageDraw.Draw(composite)
         try:
-            img = Image.open(file).convert("RGB")
-            bbox = enhanced_subject_detection(model, img)
-            if not bbox:
-                st.warning(f"No subject detected in {file.name}, using center crop")
-                bbox = (img.width // 4, img.height // 4, 3 * img.width // 4, 3 * img.height // 4)
-            final_img = smart_crop_to_target(img, bbox, (target_width, target_height), zoom_factor)
-            buffer = optimize_image(final_img, max_file_size)
-            processed.append((file.name, final_img, buffer))
-            progress_bar.progress((idx + 1) / len(uploaded_files))
-        except Exception as e:
-            st.error(f"Error processing {file.name}: {str(e)}")
+            font = ImageFont.truetype("arial.ttf", kwargs["font_size"])
+        except:
+            font = ImageFont.load_default()
+        tx = int((kwargs["text_x"] / 100) * composite.width)
+        ty = int((kwargs["text_y"] / 100) * composite.height)
+        draw.text((tx, ty), kwargs["text"], fill=kwargs["text_color"], font=font)
 
-    st.session_state.processed_images = processed
-    st.success(f"Processed {len(processed)} images successfully!")
+    return composite.convert("RGB")
 
-# ========== Show Processed Results ==========
-if "processed_images" in st.session_state:
-    st.header("🎨 Processed Results")
-    cols = st.columns(3)
-    for idx, (name, img, buffer) in enumerate(st.session_state.processed_images):
-        with cols[idx % 3]:
-            st.image(img, caption=name, use_container_width=True)
-            st.download_button(
-                f"Download {name.split('.')[0]}",
-                data=buffer.getvalue(),
-                file_name=f"cropped_{name}",
-                mime="image/jpeg",
-                key=f"dl_{idx}"
-            )
+# ========== Load Models ==========
+model = load_yolo_model()
+clip_processor, clip_model = load_clip_model()
+
+# ========== UI Layout ==========
+st.title("🎯 AI-Powered Smart Cropper + Brand Generator")
+
+uploaded_files = st.file_uploader("📸 Upload Image(s)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+logo_file = st.sidebar.file_uploader("🏷️ Upload Logo (Optional)", type=["png"])
+
+# Show preview
+if uploaded_files:
+    st.subheader("🔍 Uploaded Image Previews")
+    cols = st.columns(min(4, len(uploaded_files)))
+    for i, file in enumerate(uploaded_files):
+        img = Image.open(file)
+        cols[i % len(cols)].image(img, use_container_width=True, caption=file.name)
+
+# Settings
+with st.sidebar:
+    st.header("📏 Crop Settings")
+    target_width = st.number_input("Output Width", 512, 4096, 1080)
+    target_height = st.number_input("Output Height", 512, 4096, 1350)
+    zoom_factor = st.slider("Zoom Level", 0.5, 3.0, 1.2)
+    use_percent = st.checkbox("Headspace in Percent", True)
+    top_space = st.number_input("Top Headspace", 0, 1000, 10)
+    bottom_space = st.number_input("Bottom Headspace", 0, 1000, 10)
+    max_size_kb = st.number_input("Max File Size (KB)", 100, 5000, 800)
+
+    st.header("🛠 Branding Settings")
+    logo_scale = st.slider("Logo Size (% of width)", 5, 50, 15)
+    x_offset = st.slider("Logo X Position (%)", 0, 100, 50)
+    y_offset = st.slider("Logo Y Position (%)", 0, 100, 90)
+    add_text = st.checkbox("Add Text")
+    text = st.text_input("Overlay Text", "Your Brand Message")
+    font_size = st.slider("Font Size", 10, 150, 40)
+    text_color = st.color_picker("Text Color", "#FFFFFF")
+    text_x = st.slider("Text X Position (%)", 0, 100, 5)
+    text_y = st.slider("Text Y Position (%)", 0, 100, 5)
+    add_padding = st.checkbox("Add Padding")
+    padding = st.slider("Padding (px)", 0, 300, 50)
+    padding_color = st.color_picker("Padding Color", "#000000")
+
+# ========== Main Logic ==========
+if uploaded_files and st.button("🚀 Process Images"):
+    results = []
+    logo = Image.open(logo_file).convert("RGBA") if logo_file else None
+
+    for file in uploaded_files:
+        img = Image.open(file).convert("RGB")
+        bbox = enhanced_subject_detection(model, img)
+        if bbox is None or len(bbox) == 0:
+            bbox = (img.width // 4, img.height // 4, 3 * img.width // 4, 3 * img.height // 4)
+        cropped = smart_crop_with_headspace(
+            img, bbox, (target_width, target_height), zoom_factor,
+            top_space, bottom_space, use_percent
+        )
+        branded = apply_branding(
+            cropped, logo,
+            logo_scale=logo_scale, x_offset=x_offset, y_offset=y_offset,
+            add_text=add_text, text=text, font_size=font_size,
+            text_color=text_color, text_x=text_x, text_y=text_y,
+            add_padding=add_padding, padding=padding, padding_color=padding_color
+        )
+        buffer = optimize_image(branded, max_size_kb)
+        results.append((file.name, branded, buffer))
+
+    # Show results in columns (preview)
+    st.subheader("🎨 Branded Output Preview")
+    preview_cols = st.columns(min(4, len(results)))
+    for i, (name, img, _) in enumerate(results):
+        preview_cols[i % len(preview_cols)].image(img, caption=name, use_container_width=True)
+
+    # Individual download buttons
+    for name, img, buf in results:
+        st.download_button(f"⬇ Download {name}", data=buf.getvalue(), file_name=f"branded_{name}", mime="image/jpeg")
+
     # ZIP download
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w") as zip_file:
-        for name, _, buffer in st.session_state.processed_images:
-            zip_file.writestr(f"cropped_{name}", buffer.getvalue())
-    st.download_button(
-        "📦 Download All as ZIP",
-        data=zip_buffer.getvalue(),
-        file_name="cropped_images.zip",
-        mime="application/zip"
-    )
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w") as zipf:
+        for name, _, buf in results:
+            zipf.writestr(f"branded_{name}", buf.getvalue())
+    st.download_button("📦 Download All as ZIP", data=zip_buf.getvalue(), file_name="branded_images.zip", mime="application/zip")
