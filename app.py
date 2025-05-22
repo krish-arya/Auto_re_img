@@ -4,7 +4,6 @@ import io, zipfile, cv2, numpy as np
 from rembg import remove
 from ultralytics import YOLO
 from typing import Tuple, Optional, Union
-import torch
 import ssl
 
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -93,22 +92,40 @@ def optimize_image(img: Image.Image, max_size_kb: int) -> io.BytesIO:
 def apply_branding(img: Image.Image, logo: Optional[Image.Image], **kwargs) -> Image.Image:
     composite = img.convert("RGBA")
 
+    # Apply padding (applies regardless of logo)
+    padding_offset = 0
+    if kwargs.get("add_padding", False):
+        padding_offset = kwargs.get("padding", 0)
+        new_w = composite.width + 2 * padding_offset
+        new_h = composite.height + 2 * padding_offset
+        padded = Image.new("RGBA", (new_w, new_h), kwargs.get("padding_color", (255, 255, 255, 0)))
+        padded.paste(composite, (padding_offset, padding_offset))
+        composite = padded
+
+    # Apply logo (if provided)
     if logo:
         logo = logo.convert("RGBA")
         logo_width = int((kwargs["logo_scale"] / 100) * composite.width)
         logo_height = int(logo_width * (logo.height / logo.width))
         logo_resized = logo.resize((logo_width, logo_height), Image.LANCZOS)
+
         x_px = int((kwargs["x_offset"] / 100) * (composite.width - logo_width))
         y_px = int((kwargs["y_offset"] / 100) * (composite.height - logo_height))
-        if kwargs["add_padding"]:
-            new_w = composite.width + 2 * kwargs["padding"]
-            new_h = composite.height + 2 * kwargs["padding"]
-            padded = Image.new("RGBA", (new_w, new_h), kwargs["padding_color"])
-            padded.paste(composite, (kwargs["padding"], kwargs["padding"]))
-            x_px += kwargs["padding"]
-            y_px += kwargs["padding"]
-            composite = padded
         composite.paste(logo_resized, (x_px, y_px), logo_resized)
+
+    # Add text (optional)
+    if kwargs.get("add_text", False) and kwargs.get("text", ""):
+        draw = ImageDraw.Draw(composite)
+        try:
+            font = ImageFont.truetype("arial.ttf", kwargs["font_size"])
+        except:
+            font = ImageFont.load_default()
+        tx = int((kwargs["text_x"] / 100) * composite.width)
+        ty = int((kwargs["text_y"] / 100) * composite.height)
+        draw.text((tx, ty), kwargs["text"], fill=kwargs["text_color"], font=font)
+
+    return composite.convert("RGB")
+
 
     if kwargs["add_text"] and kwargs["text"]:
         draw = ImageDraw.Draw(composite)
@@ -158,7 +175,7 @@ with st.sidebar:
     target_width = st.number_input("Output Width", 512, 4096, 1200)
     target_height = st.number_input("Output Height", 512, 4096, 1800)
     zoom_factor = st.slider("Zoom Level", 0.5, 3.0, 1.2)
-    use_percent = st.checkbox("Headspace in Percent", True)
+    use_percent = st.checkbox("Headspace in Percent")
     top_space = st.number_input("Top Headspace", 0, 1000, 10)
     bottom_space = st.number_input("Bottom Headspace", 0, 1000, 10)
     max_size_kb = st.number_input("Max File Size (KB)", 100, 5000, 800)
@@ -216,12 +233,17 @@ if uploaded_files and st.button("🚀 Process Images"):
     # Show results in columns (preview)
     st.subheader("🎨 Branded Output Preview")
     preview_cols = st.columns(min(4, len(results)))
-    for i, (name, img, _) in enumerate(results):
-        preview_cols[i % len(preview_cols)].image(img, caption=name, use_container_width=True)
 
-    # Individual download buttons
-    for name, img, buf in results:
-        st.download_button(f"⬇ Download {name}", data=buf.getvalue(), file_name=f"branded_{name}", mime="image/jpeg")
+    for i, (name, img, buffer) in enumerate(results):
+        with preview_cols[i % len(preview_cols)]:
+            st.image(img, caption=name, use_container_width=True)
+            st.download_button(
+                label="⬇️ Download",
+                data=buffer.getvalue(),
+                file_name=f"branded_{name}",
+                mime="image/jpeg",
+                key=f"download_{i}"
+            )
 
     # ZIP download
     zip_buf = io.BytesIO()

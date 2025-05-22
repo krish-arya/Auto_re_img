@@ -6,4 +6,3 @@ opencv-python
 numpy
 ultralytics
 typing
-torch
