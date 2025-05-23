@@ -1,6 +1,7 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
-import io, zipfile, cv2, numpy as np
+import io, zipfile, cv2
+import numpy as np
 from rembg import remove
 from ultralytics import YOLO
 from typing import Tuple, Optional, Union
