@@ -127,19 +127,6 @@ def apply_branding(img: Image.Image, logo: Optional[Image.Image], **kwargs) -> I
 
     return composite.convert("RGB")
 
-
-    if kwargs["add_text"] and kwargs["text"]:
-        draw = ImageDraw.Draw(composite)
-        try:
-            font = ImageFont.truetype("arial.ttf", kwargs["font_size"])
-        except:
-            font = ImageFont.load_default()
-        tx = int((kwargs["text_x"] / 100) * composite.width)
-        ty = int((kwargs["text_y"] / 100) * composite.height)
-        draw.text((tx, ty), kwargs["text"], fill=kwargs["text_color"], font=font)
-
-    return composite.convert("RGB")
-
 def preprocess_uploaded_image(img: Image.Image, max_dim: int = 2048) -> Image.Image:
     """
     Compress or resize the uploaded image if it's too large to prevent memory issues.
