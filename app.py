@@ -144,11 +144,27 @@ model = load_yolo_model()
 
 # ========== UI Layout ==========
 st.title("📸 AI-Powered Smart Cropper + Brand Generator")
-st.info("ℹ️ Use the sidebar to customize cropping, branding, and output settings.", icon="🛠️")
+st.info("Use the sidebar to customize cropping, branding, and output settings.", icon="🛠️")
 st.subheader("📸 Upload Your Images")
-
-uploaded_files = st.file_uploader("📸 Upload Image(s)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 logo_file = st.sidebar.file_uploader("🏷️ Upload Logo (Optional)", type=["png"])
+
+if "upload_key" not in st.session_state:
+    st.session_state.upload_key = 0
+    
+if "stored_files" not in st.session_state:
+    st.session_state.stored_files = []
+    
+if st.sidebar.button("🗑️ Clear Uploaded Files"):
+    st.session_state.upload_key += 1
+    st.session_state.stored_files = []
+    st.rerun()
+
+uploaded_files = st.file_uploader(
+    "📸 Upload Image(s)", 
+    type=["jpg", "jpeg", "png"], 
+    accept_multiple_files=True, 
+    key=f"uploader_{st.session_state.upload_key}"
+)    
 
 # Show preview
 if uploaded_files:
@@ -160,7 +176,6 @@ if uploaded_files:
 
 
 # Settings
-st.sidebar.title("⚙️ Settings")
 with st.sidebar:
     st.markdown("## ✂️ Smart Crop Settings")
 
@@ -193,12 +208,22 @@ with st.sidebar:
             text_color = st.color_picker("Text Color", "#000000")
             text_x = st.slider("Text Horizontal Pos", 0, 100, 5)
             text_y = st.slider("Text Vertical Pos", 0, 100, 5)
+        else:
+            text = ""
+            font_size = 40
+            text_color = "#FFFFFF"
+            text_x = 5
+            text_y = 5
 
     with st.expander("🧱 Padding"):
         add_padding = st.checkbox("Add Padding")
         if add_padding:
             padding = st.slider("Padding (px)", 0, 300, 50)
             padding_color = st.color_picker("Padding Color", "#FFFFFF")
+        else:
+            padding = 0
+            padding_color = "#FFFFFF"
+            add_padding = False
 
 
 # ========== Main Logic ==========
