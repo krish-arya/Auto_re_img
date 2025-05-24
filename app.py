@@ -14,7 +14,7 @@ st.set_page_config(
     page_title="AI Cropper + Brand Generator",
     layout="wide",
     page_icon="🎯",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # ========== Model Loading ==========
@@ -143,7 +143,9 @@ def preprocess_uploaded_image(img: Image.Image, max_dim: int = 2048) -> Image.Im
 model = load_yolo_model()
 
 # ========== UI Layout ==========
-st.title("🎯 AI-Powered Smart Cropper + Brand Generator")
+st.title("📸 AI-Powered Smart Cropper + Brand Generator")
+st.info("ℹ️ Use the sidebar to customize cropping, branding, and output settings.", icon="🛠️")
+st.subheader("📸 Upload Your Images")
 
 uploaded_files = st.file_uploader("📸 Upload Image(s)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
 logo_file = st.sidebar.file_uploader("🏷️ Upload Logo (Optional)", type=["png"])
@@ -158,29 +160,46 @@ if uploaded_files:
 
 
 # Settings
+st.sidebar.title("⚙️ Settings")
 with st.sidebar:
-    st.header("📏 Crop Settings")
-    target_width = st.number_input("Output Width", 512, 4096, 1200)
-    target_height = st.number_input("Output Height", 512, 4096, 1800)
-    zoom_factor = st.slider("Zoom Level", 0.5, 3.0, 1.2)
-    use_percent = st.checkbox("Headspace in Percent")
-    top_space = st.number_input("Top Headspace", 0, 1000, 10)
-    bottom_space = st.number_input("Bottom Headspace", 0, 1000, 10)
-    max_size_kb = st.number_input("Max File Size (KB)", 100, 5000, 800)
+    st.markdown("## ✂️ Smart Crop Settings")
 
-    st.header("🛠 Branding Settings")
-    logo_scale = st.slider("Logo Size (% of width)", 5, 50, 15)
-    x_offset = st.slider("Logo X Position (%)", 0, 100, 50)
-    y_offset = st.slider("Logo Y Position (%)", 0, 100, 90)
-    add_text = st.checkbox("Add Text")
-    text = st.text_input("Overlay Text", "Your Brand Message")
-    font_size = st.slider("Font Size", 10, 150, 40)
-    text_color = st.color_picker("Text Color", "#000000")
-    text_x = st.slider("Text X Position (%)", 0, 100, 5)
-    text_y = st.slider("Text Y Position (%)", 0, 100, 5)
-    add_padding = st.checkbox("Add Padding")
-    padding = st.slider("Padding (px)", 0, 300, 50)
-    padding_color = st.color_picker("Padding Color", "#FFFFFF")
+    with st.expander("📐 Output Dimensions"):
+        target_width = st.number_input("Width", 512, 4096, 1200, step=100, help="Final width of the output image.")
+        target_height = st.number_input("Height", 512, 4096, 1800, step=100, help="Final height of the output image.")
+        zoom_factor = st.slider("Zoom Level", 0.5, 3.0, 1.2, 0.1, help="Zoom into the subject within the crop area.")
+        st.markdown("---")
+        max_size_kb = st.number_input("Max File Size (KB)", 100, 5000, 800, step=50,
+                                      help="Optimize image to stay under this size.")
+
+    with st.expander("🧠 Headspace & Cropping"):
+        use_percent = st.checkbox("Use Percent for Headspace")
+        top_space = st.number_input("Top Headspace", 0, 1000, 10, help="Space above the subject.")
+        bottom_space = st.number_input("Bottom Headspace", 0, 1000, 10, help="Space below the subject.")
+        
+
+    st.markdown("## 🎨 Branding Options")
+
+    with st.expander("🏷️ Logo Settings"):
+        logo_scale = st.slider("Logo Size (% of width)", 5, 50, 15, help="Size of the logo relative to image width.")
+        x_offset = st.slider("Horizontal Position", 0, 100, 50, help="Logo position from left to right.")
+        y_offset = st.slider("Vertical Position", 0, 100, 90, help="Logo position from top to bottom.")
+
+    with st.expander("🔤 Text Overlay"):
+        add_text = st.checkbox("Add Text")
+        if add_text:
+            text = st.text_input("Text Content", "Your Brand Message")
+            font_size = st.slider("Font Size", 10, 150, 40)
+            text_color = st.color_picker("Text Color", "#000000")
+            text_x = st.slider("Text Horizontal Pos", 0, 100, 5)
+            text_y = st.slider("Text Vertical Pos", 0, 100, 5)
+
+    with st.expander("🧱 Padding"):
+        add_padding = st.checkbox("Add Padding")
+        if add_padding:
+            padding = st.slider("Padding (px)", 0, 300, 50)
+            padding_color = st.color_picker("Padding Color", "#FFFFFF")
+
 
 # ========== Main Logic ==========
 if uploaded_files and st.button("🚀 Process Images"):
