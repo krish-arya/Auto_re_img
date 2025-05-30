@@ -2,10 +2,10 @@ import os
 os.environ["STREAMLIT_DISABLE_WATCHDOG_WARNINGS"] = "true"
 
 import streamlit as st
-st.set_option("server.fileWatcherType", "none")
 
 from PIL import Image, ImageFont, ImageDraw
-import io, zipfile, cv2
+import io, zipfile
+import cv2
 import numpy as np
 from rembg import remove
 from ultralytics import YOLO
