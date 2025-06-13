@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: streamlit-ai-brand-analyzer
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
